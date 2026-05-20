@@ -13,10 +13,11 @@ char    *resolve_path(const char *cmd)
     char    full[PATH_MAX];
     struct stat st;
 
-    /* Si c'est déjà un chemin absolu ou relatif */
-    if (cmd[0] == '/' || cmd[0] == '.')
+    /* Toute commande contenant un slash doit etre executee telle quelle */
+    if (strchr(cmd, '/'))
     {
-        if (stat(cmd, &st) == 0 && (st.st_mode & S_IXUSR))
+        if (stat(cmd, &st) == 0 && S_ISREG(st.st_mode)
+            && access(cmd, X_OK) == 0)
             return (strdup(cmd));
         return (NULL);
     }
@@ -33,7 +34,8 @@ char    *resolve_path(const char *cmd)
     while ((dir = strsep(&token, ":")) != NULL)
     {
         snprintf(full, PATH_MAX, "%s/%s", dir, cmd);
-        if (stat(full, &st) == 0 && (st.st_mode & S_IXUSR))
+        if (stat(full, &st) == 0 && S_ISREG(st.st_mode)
+            && access(full, X_OK) == 0)
         {
             free(path_copy);
             return (strdup(full));

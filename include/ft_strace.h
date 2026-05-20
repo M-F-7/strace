@@ -16,9 +16,12 @@
 # include <sys/user.h>
 # include <sys/uio.h>
 # include <sys/stat.h>
+# include <sys/mman.h>
+# include <sys/resource.h>
 # include <sys/signal.h>
 
 # include <linux/ptrace.h>
+# include <asm/prctl.h>
 # include <elf.h>
 
 # include "syscall_table.h"
@@ -32,9 +35,7 @@
 /*
 ** Options ptrace
 */
-# define PTRACE_OPTS (PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEFORK \
-                    | PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE \
-                    | PTRACE_O_TRACEEXEC | PTRACE_O_EXITKILL)
+# define PTRACE_OPTS (PTRACE_O_TRACESYSGOOD | PTRACE_O_EXITKILL)
 
 /*
 ** Nombre max de syscalls connus
@@ -61,6 +62,7 @@ typedef struct s_tracer
     int                 opt_c;          /* flag -c */
     int                 arch;           /* ARCH_64 ou ARCH_32 */
     int                 in_syscall;     /* toggle entry/exit */
+    int                 trace_started;  /* ignorer la synchro avant execve */
     long                last_syscall;   /* dernier numéro de syscall */
     t_syscall_stat      stats64[MAX_SYSCALLS_64];
     t_syscall_stat      stats32[MAX_SYSCALLS_32];

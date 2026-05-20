@@ -6,6 +6,13 @@
 static volatile sig_atomic_t    g_child_exited = 0;
 static pid_t                    g_child_pid    = 0;
 
+static int  is_execve_syscall(t_regs *regs)
+{
+    if (regs->arch == ARCH_64)
+        return (regs->syscall_nr == 59);
+    return (regs->syscall_nr == 11);
+}
+
 /*
 ** Handler SIGINT/SIGTERM : interrompt le child proprement
 */
@@ -48,13 +55,11 @@ static void child_exec(t_tracer *tr, int pipe_fd)
 static int  handle_ptrace_stop(t_tracer *tr, pid_t pid, int status)
 {
     int         sig;
-    int         event;
     siginfo_t   si;
     t_regs      regs;
     int         is_error;
 
     sig   = 0;
-    event = (status >> 16) & 0xff;
 
     /* Cas 1 : le processus a terminé normalement */
     if (WIFEXITED(status))
@@ -94,9 +99,16 @@ static int  handle_ptrace_stop(t_tracer *tr, pid_t pid, int status)
 
         if (!tr->in_syscall)
         {
-            /* Entrée dans le syscall */
+            /* Ignore les syscalls du pipe de synchro avant le vrai execve */
+            if (!tr->trace_started && !is_execve_syscall(&regs))
+            {
+                ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+                return (1);
+            }
             tr->in_syscall   = 1;
             tr->last_syscall = (long)regs.syscall_nr;
+            if (!tr->trace_started)
+                tr->trace_started = 1;
             if (!tr->opt_c)
                 print_syscall_entry(&regs, tr->arch);
         }
@@ -116,34 +128,13 @@ static int  handle_ptrace_stop(t_tracer *tr, pid_t pid, int status)
         return (1);
     }
 
-    /*
-    ** Cas 4 : SIGTRAP avec event (PTRACE_O_TRACE*)
-    ** Couvre : PTRACE_EVENT_FORK, VFORK, CLONE, EXEC, EXIT
-    */
-    if (sig == SIGTRAP && event != 0)
+    if (sig == SIGTRAP)
     {
-        /*
-        ** PTRACE_EVENT_STOP : généré par PTRACE_INTERRUPT ou group-stop
-        ** On utilise PTRACE_LISTEN pour les group-stops
-        */
-        if (event == PTRACE_EVENT_STOP)
+        if (ptrace(PTRACE_GETSIGINFO, pid, NULL, &si) < 0)
         {
-            if (ptrace(PTRACE_GETSIGINFO, pid, NULL, &si) < 0)
-            {
-                /* Group-stop : utiliser PTRACE_LISTEN */
-                ptrace(PTRACE_LISTEN, pid, NULL, NULL);
-                return (1);
-            }
-            /* PTRACE_INTERRUPT stop : relancer en mode syscall */
-            if (g_child_exited)
-            {
-                ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-                return (1);
-            }
-            ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+            ptrace(PTRACE_LISTEN, pid, NULL, NULL);
             return (1);
         }
-        /* Autres événements : continuer */
         ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
         return (1);
     }
@@ -175,7 +166,7 @@ static int  handle_ptrace_stop(t_tracer *tr, pid_t pid, int status)
 
 /*
 ** Boucle principale du traceur
-** Utilise PTRACE_SEIZE + PTRACE_SYSCALL
+** Utilise PTRACE_SEIZE + PTRACE_SETOPTIONS + PTRACE_SYSCALL
 */
 int run_tracer(t_tracer *tr)
 {
@@ -219,9 +210,8 @@ int run_tracer(t_tracer *tr)
 
     /*
     ** PTRACE_SEIZE : attache au child sans l'arrêter
-    ** Les options ptrace sont passées directement
     */
-    if (ptrace(PTRACE_SEIZE, child, NULL, (void *)(long)PTRACE_OPTS) < 0)
+    if (ptrace(PTRACE_SEIZE, child, NULL, NULL) < 0)
     {
         close(pipefd[1]);
         ft_perror("PTRACE_SEIZE");
@@ -249,6 +239,9 @@ int run_tracer(t_tracer *tr)
 
     if (pid < 0)
         ft_perror("waitpid initial");
+
+    if (ptrace(PTRACE_SETOPTIONS, child, NULL, (void *)(long)PTRACE_OPTS) < 0)
+        ft_perror("PTRACE_SETOPTIONS");
 
     /* Lance le traçage des syscalls */
     if (ptrace(PTRACE_SYSCALL, child, NULL, NULL) < 0)

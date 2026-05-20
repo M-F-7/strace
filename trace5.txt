@@ -1,0 +1,21 @@
+%       calls      errors     syscall 
+------ ----------- ----------- -------------------------
+  3.33           1           0 read
+  3.33           1           0 write
+  6.67           2           0 close
+  6.67           2           0 fstat
+ 26.67           8           0 mmap
+ 10.00           3           0 mprotect
+  3.33           1           0 munmap
+  3.33           1           0 brk
+  6.67           2           0 pread64
+  3.33           1           1 access
+  3.33           1           0 execve
+  3.33           1           0 arch_prctl
+  3.33           1           0 set_tid_address
+  6.67           2           0 openat
+  3.33           1           0 set_robust_list
+  3.33           1           0 prlimit64
+  3.33           1           0 rseq
+------ ----------- ----------- -------------------------
+   100          30           1 total
